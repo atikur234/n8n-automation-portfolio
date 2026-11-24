@@ -1,0 +1,246 @@
+{
+  "name": "WhatsApp Cloud API PoC",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-get",
+      "name": "Webhook (GET verify)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 200],
+      "webhookId": "wa-verify"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-post",
+      "name": "Webhook (POST message)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 500],
+      "webhookId": "wa-message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "verify-token-match",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $env.WHATSAPP_VERIFY_TOKEN }}",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-verify-token",
+      "name": "IF verify token matches",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {"responseCode": 200}
+      },
+      "id": "respond-challenge",
+      "name": "Echo hub.challenge (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "forbidden",
+        "options": {"responseCode": 403}
+      },
+      "id": "respond-forbidden",
+      "name": "Reject (403)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "is-message",
+              "leftValue": "={{ $json.body.entry[0].changes[0].value.messages }}",
+              "rightValue": "",
+              "operator": {"type": "object", "operation": "exists", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-is-message",
+      "name": "IF is a message (not status)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 500]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "a1", "name": "phone_number", "value": "={{ $json.body.entry[0].changes[0].value.messages[0].from }}", "type": "string"},
+            {"id": "a2", "name": "text", "value": "={{ $json.body.entry[0].changes[0].value.messages[0].text?.body || '' }}", "type": "string"},
+            {"id": "a3", "name": "message_id", "value": "={{ $json.body.entry[0].changes[0].value.messages[0].id }}", "type": "string"},
+            {"id": "a4", "name": "contact_name", "value": "={{ $json.body.entry[0].changes[0].value.contacts?.[0]?.profile?.name || 'there' }}", "type": "string"},
+            {"id": "a5", "name": "type", "value": "={{ $json.body.entry[0].changes[0].value.messages[0].type }}", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-fields",
+      "name": "Extract message fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [780, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": false, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "wants-template",
+              "leftValue": "={{ $json.text.trim().toLowerCase() }}",
+              "rightValue": "template",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-wants-template",
+      "name": "IF text = 'template'",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1020, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone_number }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"poc_welcome\",\n    \"language\": {\"code\": \"en\"},\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\"type\": \"text\", \"text\": \"{{ $json.contact_name }}\"},\n          {\"type\": \"text\", \"text\": \"REF-{{ $now.toMillis() }}\"}\n        ]\n      }\n    ]\n  }\n}",
+        "options": {}
+      },
+      "id": "send-template",
+      "name": "Send Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1260, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone_number }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Hi {{ $json.contact_name }}! You said: \\\"{{ $json.text }}\\\". This is an automated reply from the Cloud API PoC. Reply 'template' to receive the approved template message.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send-text",
+      "name": "Send Text Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1260, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {"responseCode": 200}
+      },
+      "id": "respond-200",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1520, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ignored\"}",
+        "options": {"responseCode": 200}
+      },
+      "id": "respond-200-ignored",
+      "name": "Respond 200 (non-message)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 700]
+    }
+  ],
+  "connections": {
+    "Webhook (GET verify)": {
+      "main": [[{"node": "IF verify token matches", "type": "main", "index": 0}]]
+    },
+    "IF verify token matches": {
+      "main": [
+        [{"node": "Echo hub.challenge (200)", "type": "main", "index": 0}],
+        [{"node": "Reject (403)", "type": "main", "index": 0}]
+      ]
+    },
+    "Webhook (POST message)": {
+      "main": [[{"node": "IF is a message (not status)", "type": "main", "index": 0}]]
+    },
+    "IF is a message (not status)": {
+      "main": [
+        [{"node": "Extract message fields", "type": "main", "index": 0}],
+        [{"node": "Respond 200 (non-message)", "type": "main", "index": 0}]
+      ]
+    },
+    "Extract message fields": {
+      "main": [[{"node": "IF text = 'template'", "type": "main", "index": 0}]]
+    },
+    "IF text = 'template'": {
+      "main": [
+        [{"node": "Send Template", "type": "main", "index": 0}],
+        [{"node": "Send Text Reply", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Template": {
+      "main": [[{"node": "Respond 200 OK", "type": "main", "index": 0}]]
+    },
+    "Send Text Reply": {
+      "main": [[{"node": "Respond 200 OK", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {"executionOrder": "v1"},
+  "meta": {
+    "description": "WhatsApp Cloud API PoC. Handles Meta webhook verification handshake (GET) and inbound messages (POST). Replies with a text echo by default; when user sends the literal text 'template', triggers the pre-approved 'poc_welcome' utility template. Requires env vars: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN."
+  }
+}
