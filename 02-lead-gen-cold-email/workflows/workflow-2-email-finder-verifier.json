@@ -1,0 +1,411 @@
+{
+  "name": "Workflow 2 - Email Finder + Verifier (v3 all edge cases)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "f3a3b001-0001-4001-8001-000000000001",
+      "name": "When clicking Execute",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "new"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f3a3b001-0002-4002-8002-000000000002",
+      "name": "Get New Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1140,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "has-web",
+                    "leftValue": "={{ ($json.website || '').toString().trim() }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "Has Website"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "f3a3b001-0003-4003-8003-000000000003",
+      "name": "Route - Website?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -940,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No-website leads -> terminal status so they never sit as 'new' again.\nreturn $input.all().map(it => ({ json: { ...it.json, status: 'no_website' } }));"
+      },
+      "id": "f3a3b001-0004-4004-8004-000000000004",
+      "name": "Mark No Website",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -740,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "id": "f3a3b001-0005-4005-8005-000000000005",
+      "name": "Fetch Website HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract each lead's own email. Terminal status if none found.\nconst out = [];\nconst items = $input.all();\nconst leads = $('Route - Website?').all();\nfor (let i = 0; i < items.length; i++) {\n  const html = String(items[i].json.data || items[i].json.body || '');\n  const lead = leads[i].json;\n  const matches = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || [];\n  const bad = /(example|sentry|wix\\.com|godaddy|\\.png|\\.jpe?g|\\.gif|\\.webp|@2x|@sentry|yourdomain|domain\\.com|email@|user@|name@)/i;\n  // prefer business-looking inboxes\n  const clean = matches.filter(e => !bad.test(e));\n  const preferred = clean.find(e => /^(info|contact|hello|office|admin|reception|frontdesk|appointments)@/i.test(e)) || clean[0] || '';\n  const email = preferred.toLowerCase();\n  out.push({ json: { ...lead, email, status: email ? 'email_found' : 'no_email' } });\n}\nreturn out;"
+      },
+      "id": "f3a3b001-0006-4006-8006-000000000006",
+      "name": "Extract Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "has-email",
+                    "leftValue": "={{ $json.email }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "Email Found"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "f3a3b001-0007-4007-8007-000000000007",
+      "name": "Route - Email?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Website existed but no email found -> terminal.\nreturn $input.all().map(it => ({ json: { ...it.json, status: 'no_email' } }));"
+      },
+      "id": "f3a3b001-0008-4008-8008-000000000008",
+      "name": "Mark No Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.millionverifier.com/api/v3/?api=YOUR_MILLIONVERIFIER_KEY&email={{ $json.email }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "f3a3b001-0009-4009-8009-000000000009",
+      "name": "Verify Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Robust verification mapping. Distinguishes API-error (retryable) from real invalid.\nconst out = [];\nconst items = $input.all();\nconst leads = $('Route - Email?').all();\nfor (let i = 0; i < items.length; i++) {\n  const raw = items[i].json;\n  const lead = leads[i].json;\n  // fullResponse=true -> data under .body; else the object itself\n  const body = (raw && raw.body !== undefined) ? raw.body : raw;\n  const httpCode = raw && raw.statusCode ? Number(raw.statusCode) : 200;\n  let result = '';\n  if (body && typeof body === 'object') result = String(body.result || body.resultcode || '').toLowerCase();\n  else if (typeof body === 'string') { try { const p = JSON.parse(body); result = String(p.result || '').toLowerCase(); } catch(e) { result = ''; } }\n\n  let status, email_status;\n  const apiErrored = httpCode >= 400 || result === '' || result === 'error' || (body && body.error);\n  if (apiErrored) {\n    // Verifier could not run (missing/invalid key, rate limit, timeout). Keep email, retry later.\n    status = 'unverifiable';\n    email_status = 'verify_failed';\n  } else if (result === 'ok' || result === 'valid') {\n    status = 'verified'; email_status = 'valid';\n  } else if (result === 'catch_all' || result === 'catchall') {\n    status = 'verified'; email_status = 'catch_all';\n  } else if (result === 'unknown') {\n    status = 'unverifiable'; email_status = 'unknown';\n  } else {\n    // disposable, invalid, etc.\n    status = 'invalid_email'; email_status = result;\n  }\n  out.push({ json: { ...lead, email_status, status } });\n}\nreturn out;"
+      },
+      "id": "f3a3b001-0010-4010-8010-000000000010",
+      "name": "Map Verify Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        220
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "f3a3b001-0011-4011-8011-000000000011",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        320,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "f3a3b001-0012-4012-8012-000000000012",
+      "name": "Update Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking Execute": {
+      "main": [
+        [
+          {
+            "node": "Get New Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Leads": {
+      "main": [
+        [
+          {
+            "node": "Route - Website?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route - Website?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark No Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website HTML": {
+      "main": [
+        [
+          {
+            "node": "Extract Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email": {
+      "main": [
+        [
+          {
+            "node": "Route - Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route - Email?": {
+      "main": [
+        [
+          {
+            "node": "Verify Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark No Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Email": {
+      "main": [
+        [
+          {
+            "node": "Map Verify Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Verify Result": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark No Email": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark No Website": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
