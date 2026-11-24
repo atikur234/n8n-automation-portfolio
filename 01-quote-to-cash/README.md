@@ -48,7 +48,7 @@ A 10-case test pack covers: the happy path, messy text with the email inside the
 | File | What it is |
 |---|---|
 | [`docs/build-spec.md`](docs/build-spec.md) | Full build spec: architecture, node-by-node tables, data model, price list, every Code node, AI prompt and schema, every API call, credential setup, failure modes, test plan, acceptance criteria, security notes and build order |
-| `workflows/` | Exported n8n workflows |
+| `workflows/` | Exported n8n workflows (being added) |
 
 ## Security and privacy
 
